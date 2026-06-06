@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+motor
+pymongo[srv]
+pydantic-settings
+passlib[bcrypt]
+pyjwt
+python-multipart
+fastapi-mail
+bcrypt==4.0.1
