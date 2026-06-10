@@ -102,3 +102,43 @@ async def get_user_following_list(
         current_user_id=str(current_user["_id"]),
         db=db
     )
+
+
+@router.post("/{username}/block", status_code=status.HTTP_200_OK)
+async def block_user_endpoint(
+    username: str,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_database)
+):
+    """Block a user and instantly sever all existing follows/requests."""
+    return await InteractionService.block_user(
+        blocker_id=str(current_user["_id"]),
+        target_username=username,
+        db=db
+    )
+
+
+@router.delete("/{username}/block", status_code=status.HTTP_200_OK)
+async def unblock_user_endpoint(
+    username: str,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_database)
+):
+    """Unblock a user."""
+    return await InteractionService.unblock_user(
+        blocker_id=str(current_user["_id"]),
+        target_username=username,
+        db=db
+    )
+
+
+@router.get("/me/blocked", response_model=list[UserSearchResult], status_code=status.HTTP_200_OK)
+async def get_blocked_users_list(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_database)
+):
+    """Retrieve the list of users currently blocked by the authenticated user."""
+    return await InteractionService.get_blocked_users(
+        current_user_id=str(current_user["_id"]),
+        db=db
+    )

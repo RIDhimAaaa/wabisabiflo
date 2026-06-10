@@ -322,3 +322,110 @@ class InteractionService:
         users = await users_cursor.to_list(length=len(following_ids))
 
         return [UserSearchResult(**user) for user in users]
+
+    # ... block/unblock system ...
+
+    @staticmethod
+    async def block_user(
+        blocker_id: str, 
+        target_username: str, 
+        db: AsyncIOMotorDatabase
+    ):
+        """Blocks a user and completely severs any existing social ties."""
+        
+        target_user = await db.users.find_one({"username": target_username})
+        if not target_user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+            
+        target_id = str(target_user["_id"])
+
+        if blocker_id == target_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot block yourself")
+
+        # 1. Check if already blocked
+        existing_block = await db.blocks.find_one({
+            "blocker_id": blocker_id,
+            "blocked_id": target_id
+        })
+        if existing_block:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User is already blocked")
+
+        # 2. Insert the Block Record
+        await db.blocks.insert_one({
+            "blocker_id": blocker_id,
+            "blocked_id": target_id,
+            "created_at": datetime.now(timezone.utc)
+        })
+
+        # 3. The Purge: Destroy all connections in BOTH directions
+        # Using $or allows us to delete everything in a single database trip
+        sever_query = {
+            "$or": [
+                {"follower_id": blocker_id, "following_id": target_id},
+                {"follower_id": target_id, "following_id": blocker_id}
+            ]
+        }
+        await db.follows.delete_many(sever_query)
+
+        sever_requests_query = {
+            "$or": [
+                {"requester_id": blocker_id, "target_id": target_id},
+                {"requester_id": target_id, "target_id": blocker_id}
+            ]
+        }
+        await db.follow_requests.delete_many(sever_requests_query)
+
+        return {"message": f"Successfully blocked {target_username}"}
+
+    @staticmethod
+    async def unblock_user(
+        blocker_id: str, 
+        target_username: str, 
+        db: AsyncIOMotorDatabase
+    ):
+        """Removes a block. Does NOT restore previous follows."""
+        
+        target_user = await db.users.find_one({"username": target_username})
+        if not target_user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+            
+        target_id = str(target_user["_id"])
+
+        result = await db.blocks.delete_one({
+            "blocker_id": blocker_id,
+            "blocked_id": target_id
+        })
+
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User is not blocked")
+
+        return {"message": f"Successfully unblocked {target_username}"}
+    
+    # ... (get blocked users) ...
+
+    @staticmethod
+    async def get_blocked_users(
+        current_user_id: str, 
+        db: AsyncIOMotorDatabase
+    ) -> list[UserSearchResult]:
+        """Fetches the list of users that the current user has blocked."""
+        
+        # 1. Get the Block Edges (Who has the current user blocked?)
+        cursor = db.blocks.find({"blocker_id": current_user_id})
+        blocks = await cursor.to_list(length=100) # Capped for pagination/safety
+        
+        if not blocks:
+            return []
+
+        # 2. Extract the IDs of the blocked users
+        blocked_ids = [ObjectId(block["blocked_id"]) for block in blocks]
+        
+        # 3. Batch query the users collection to get their public profiles
+        users_cursor = db.users.find(
+            {"_id": {"$in": blocked_ids}},
+            {"username": 1, "full_name": 1, "profile_picture": 1} # Only pull what we need
+        )
+        users = await users_cursor.to_list(length=len(blocked_ids))
+
+        # 4. Return as the lightweight UserSearchResult schema
+        return [UserSearchResult(**user) for user in users]

@@ -30,6 +30,15 @@ async def init_indexes(db):
         await db.follows.create_indexes(follow_indexes)
         print(" Follows collection indexes verified.")
 
+        # 3. Blocks Collection Indexes
+        block_indexes = [
+            # Compound unique index prevents double-blocking the same person
+            IndexModel([("blocker_id", ASCENDING), ("blocked_id", ASCENDING)], unique=True),
+        ]
+        await db.blocks.create_indexes(block_indexes)
+        print(" Blocks collection indexes verified.")
+
+
     except Exception as e:
         print(f" Failed to initialize MongoDB indexes: {e}")
 
