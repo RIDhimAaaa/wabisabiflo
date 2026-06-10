@@ -11,6 +11,16 @@ class UserResponse(BaseModel):
     email: str
     is_verified: bool
 
+# ---------------------------------------
+# 2. Authentication / Token Schemas
+# ---------------------------------------
 class Token(BaseModel):
+    """The JSON response sent back upon successful login."""
     access_token: str
-    token_type: str
+    token_type: str = "bearer"
+    # Note: We do NOT include the refresh token here because 
+    # it is securely injected directly into an HttpOnly cookie.
+
+class TokenData(BaseModel):
+    """The shape of the data encoded inside our JWTs."""
+    username: str | None = None
