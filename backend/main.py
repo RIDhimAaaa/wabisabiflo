@@ -7,6 +7,7 @@ from modules.auth.router import router as auth_router
 from modules.users.router import router as users_router
 
 from modules.users.profile.router import router as profile_router 
+from modules.users.interaction.router import router as interaction_router
 from dependencies.exceptions import validation_exception_handler
 
 # The lifespan context manager handles startup and shutdown events
@@ -31,6 +32,7 @@ app = FastAPI(
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(profile_router, prefix="/users") 
+app.include_router(interaction_router, prefix="/users")
 
 @app.get("/")
 async def health_check():
