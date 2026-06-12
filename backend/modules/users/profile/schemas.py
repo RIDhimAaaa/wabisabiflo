@@ -41,3 +41,7 @@ class UserSearchResult(BaseModel):
     username: str
     full_name: str | None = None
     profile_picture: str | None = None
+
+
+class AvatarUpdate(BaseModel):
+    avatar_url: str = Field(..., description="The public URL of the uploaded image")

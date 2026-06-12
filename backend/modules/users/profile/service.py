@@ -1,5 +1,9 @@
 import asyncio
+from uuid import uuid4
 from fastapi import HTTPException, status
+from shared.s3 import S3Service
+from bson import ObjectId
+from pymongo import ReturnDocument
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
 
@@ -106,3 +110,51 @@ class ProfileService:
         users = await cursor.to_list(length=20)
         
         return [UserSearchResult(**user) for user in users]
+    
+    # ... avatar logic ...
+
+    @staticmethod
+    async def update_avatar(
+        user_id: str | ObjectId, 
+        avatar_url: str, 
+        db: AsyncIOMotorDatabase
+    ) -> dict:
+        """Updates the user's profile picture URL in the database."""
+        
+        updated_user = await db.users.find_one_and_update(
+            {"_id": user_id},
+            {"$set": {"profile_picture": avatar_url}},
+            return_document=ReturnDocument.AFTER
+        )
+
+        if not updated_user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail="User not found"
+            )
+
+        return updated_user
+
+    @staticmethod
+    def get_avatar_upload_presigned_url(user_id: str | ObjectId, file_type: str) -> dict:
+        """
+        Business logic to validate file type, generate a unique S3 key, 
+        and request a presigned upload URL from the storage engine.
+        """
+        # 1. Strict business rule validation
+        if not file_type.startswith("image/"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="File must be an image"
+            )
+
+        # 2. Process file extension and unique object name
+        extension = file_type.split("/")[-1]
+        random_hash = uuid4().hex[:8]
+        object_name = f"avatars/{str(user_id)}_{random_hash}.{extension}"
+
+        # 3. Call the S3 engine
+        return S3Service.generate_presigned_upload(
+            object_name=object_name,
+            file_type=file_type
+        )
