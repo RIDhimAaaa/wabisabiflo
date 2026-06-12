@@ -27,7 +27,7 @@ app = FastAPI(
         RequestValidationError: validation_exception_handler
     }
 )
-
+#testing commit
 # Include all the routers here
 app.include_router(auth_router)
 app.include_router(users_router)
