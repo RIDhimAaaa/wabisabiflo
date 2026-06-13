@@ -32,3 +32,13 @@ async def get_comments(
     """Load the comment thread for a post."""
     comments = await CommentService.get_comments_for_post(post_id=post_id, db=db)
     return [CommentResponse(**comment) for comment in comments]
+
+
+@router.get("/comments/{parent_comment_id}/replies", response_model=list[CommentResponse])
+async def get_comment_replies(
+    parent_comment_id: str,
+    db: AsyncIOMotorDatabase = Depends(get_database)
+):
+    """Load the replies for a specific top-level comment."""
+    replies = await CommentService.get_replies_for_comment(parent_comment_id=parent_comment_id, db=db)
+    return [CommentResponse(**reply) for reply in replies]
