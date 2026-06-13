@@ -52,3 +52,38 @@ class LikeService:
             "has_liked": has_liked,
             "new_like_count": updated_post["like_count"]
         }
+    
+    @staticmethod
+    async def get_users_who_liked(post_id: str, db: AsyncIOMotorDatabase) -> list[dict]:
+        """Fetches the profiles of users who liked a specific post."""
+        if not ObjectId.is_valid(post_id):
+            raise HTTPException(status_code=400, detail="Invalid Post ID")
+
+        pipeline = [
+            {"$match": {"post_id": ObjectId(post_id)}},
+            {"$sort": {"_id": -1}}, # Show newest likes at the top
+            {"$limit": 100}, # Standard production limit for the "Likes" modal
+            {
+                "$lookup": {
+                    "from": "users",
+                    "localField": "user_id",
+                    "foreignField": "_id",
+                    "as": "user_data"
+                }
+            },
+            {"$unwind": "$user_data"}
+        ]
+
+        cursor = db.likes.aggregate(pipeline)
+        likes = await cursor.to_list(length=100)
+
+        # Format to match our existing AuthorInfo schema
+        users = []
+        for like in likes:
+            users.append({
+                "_id": like["user_data"]["_id"],
+                "username": like["user_data"]["username"],
+                "profile_picture": like["user_data"].get("profile_picture")
+            })
+            
+        return users

@@ -3,7 +3,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from db.mongo import get_database
 from dependencies.auth import get_current_user
-from ..schemas import LikeToggleResponse  # Pulling from the parent posts directory
+from ..schemas import LikeToggleResponse, AuthorInfo  # Pulling from the parent posts directory
 from .service import LikeService
 
 router = APIRouter(prefix="/posts", tags=["Post Engagement"])
@@ -20,3 +20,11 @@ async def toggle_post_like(
         current_user_id=current_user["_id"],
         db=db
     )
+
+@router.get("/{post_id}/likes", response_model=list[AuthorInfo])
+async def get_post_likers(
+    post_id: str,
+    db: AsyncIOMotorDatabase = Depends(get_database)
+):
+    """Retrieve a list of users who liked a post."""
+    return await LikeService.get_users_who_liked(post_id=post_id, db=db)
