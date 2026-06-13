@@ -185,3 +185,57 @@ class PostService:
             {"_id": ObjectId(post_id)}, 
             {"$set": {"is_deleted": True, "deleted_at": datetime.now(timezone.utc)}}
         )
+
+    @staticmethod
+    async def search_posts_by_hashtag(
+        hashtag: str, 
+        current_user_id: ObjectId,
+        db: AsyncIOMotorDatabase,
+        limit: int = 20
+    ) -> list[dict]:
+        """
+        Finds recent posts containing a specific hashtag.
+        """
+        # Clean the input: remove the '#' if the frontend accidentally sends it, and ensure lowercase
+        clean_tag = hashtag.lstrip("#").lower()
+
+        # Search the database where the 'hashtags' array contains our clean_tag
+        pipeline = [
+            {"$match": {
+                "hashtags": clean_tag, 
+                "is_deleted": False
+            }},
+            {"$sort": {"created_at": -1}}, # Newest first
+            {"$limit": limit},
+            {
+                "$lookup": {
+                    "from": "users",
+                    "localField": "author_id",
+                    "foreignField": "_id",
+                    "as": "author_data"
+                }
+            },
+            {"$unwind": "$author_data"}
+        ]
+
+        cursor = db.posts.aggregate(pipeline)
+        posts = await cursor.to_list(length=limit)
+
+        formatted_posts = []
+        for post in posts:
+            post["author"] = {
+                "_id": post["author_data"]["_id"],
+                "username": post["author_data"]["username"],
+                "profile_picture": post["author_data"].get("profile_picture")
+            }
+            
+            # Check if the current user has liked these search results
+            like_exists = await db.likes.find_one({
+                "post_id": post["_id"], 
+                "user_id": current_user_id
+            })
+            post["has_liked"] = bool(like_exists)
+            
+            formatted_posts.append(post)
+
+        return formatted_posts

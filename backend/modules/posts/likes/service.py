@@ -2,6 +2,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
 from fastapi import HTTPException, status
 from pymongo import ReturnDocument
+from modules.feed.service import FeedService
 
 class LikeService:
     @staticmethod
@@ -45,6 +46,9 @@ class LikeService:
                 return_document=ReturnDocument.AFTER
             )
             has_liked = True
+
+            # Only increase their affinity score if they actually LIKED the post
+            await FeedService.track_user_affinity(current_user_id, post.get("hashtags", []), db)
 
         # 3. Return the exact UI state the frontend needs
         return {

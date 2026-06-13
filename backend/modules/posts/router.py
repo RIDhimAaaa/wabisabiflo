@@ -23,6 +23,26 @@ async def create_new_post(
     )
     return PostResponse(**new_post)
 
+
+@router.get("/search/tags", response_model=list[PostResponse])
+async def search_by_hashtag(
+    q: str = Query(..., description="The hashtag to search for, without the #"),
+    current_user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_database)
+):
+    """
+    Search for recent posts containing a specific hashtag.
+    Example: /posts/search/tags?q=python
+    """
+    posts = await PostService.search_posts_by_hashtag(
+        hashtag=q,
+        current_user_id=current_user["_id"],
+        db=db
+    )
+    
+    return [PostResponse(**post) for post in posts]
+
+
 @router.get("/{post_id}", response_model=PostResponse)
 async def get_single_post(
     post_id: str,
