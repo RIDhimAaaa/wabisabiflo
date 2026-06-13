@@ -33,12 +33,16 @@ class LocationMetadata(BaseModel):
 # -------------------------------------------------------------------
 # 2. Comments Schemas
 # -------------------------------------------------------------------
+
 class CommentCreate(BaseModel):
     content: str = Field(..., min_length=1, max_length=500)
+    # If null, it's a main comment. If it has an ID, it's a reply.
+    parent_comment_id: PyObjectId | None = None 
 
 class CommentResponse(BaseModel):
     id: PyObjectId = Field(alias="_id")
     post_id: PyObjectId
+    parent_comment_id: PyObjectId | None = None  # <--- The Magic Link
     author: AuthorInfo
     content: str
     created_at: datetime
