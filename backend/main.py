@@ -10,6 +10,7 @@ from modules.users.profile.router import router as profile_router
 from modules.users.interaction.router import router as interaction_router
 from modules.posts.router import router as posts_router
 from modules.feed.router import router as feed_router
+from modules.chat.router import router as chat_router
 from dependencies.exceptions import validation_exception_handler
 from db.redis import check_redis_connection
 
@@ -38,6 +39,7 @@ app.include_router(profile_router, prefix="/users")
 app.include_router(interaction_router, prefix="/users")
 app.include_router(posts_router)
 app.include_router(feed_router)
+app.include_router(chat_router)
 
 @app.get("/")
 async def health_check():

@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, WebSocketException
 from fastapi.security import OAuth2PasswordBearer
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
@@ -33,3 +33,24 @@ async def get_current_user(
         raise credentials_exception
         
     return user
+
+def verify_ws_token(token: str) -> str:
+    """
+    Manually decodes a JWT for WebSockets.
+    Throws a ValueError if the token is expired or fake.
+    """
+    try:
+        # NOTE: Make sure these variable names match your actual config/settings!
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        
+        # Depending on how you created the token, this might be payload.get("user_id") 
+        # or payload.get("sub"). Adjust accordingly!
+        user_id = payload.get("sub") 
+        
+        if user_id is None:
+            raise ValueError("Invalid token payload")
+            
+        return str(user_id)
+        
+    except Exception as e: # Catching generic exception to cover expired/invalid tokens
+        raise ValueError(f"Token verification failed: {e}")
