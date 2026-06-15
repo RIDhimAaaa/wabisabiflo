@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from datetime import datetime, timezone
+from modules.users.profile.schemas import UserSearchResult
 
 # ---------------------------------------
 # Internal Database Representations
@@ -43,3 +44,7 @@ class PendingRequestItem(BaseModel):
     requester_full_name: str | None = None
     profile_picture: str | None = None
     created_at: datetime
+
+class PaginatedUserResult(BaseModel):
+    items: list[UserSearchResult]
+    next_cursor: str | None = None

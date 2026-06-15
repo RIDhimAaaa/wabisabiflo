@@ -230,15 +230,17 @@ class InteractionService:
 
         return output
     
-    # ... (inside your InteractionService class, below your request logic) ...
+    
 
     @staticmethod
     async def get_followers(
         target_username: str, 
         current_user_id: str, 
-        db: AsyncIOMotorDatabase
-    ) -> list[UserSearchResult]:
-        """Fetches the list of people following a user, enforcing privacy rules."""
+        db: AsyncIOMotorDatabase,
+        cursor: str | None = None,
+        limit: int = 20
+    ) -> dict:
+        """Fetches the list of people following a user, using cursor pagination."""
         
         target_user = await db.users.find_one({"username": target_username})
         if not target_user:
@@ -246,10 +248,8 @@ class InteractionService:
             
         target_id = str(target_user["_id"])
 
-        # 🛑 THE PRIVACY GATE
-        # If the account is private, AND the person asking is not the owner...
+        # THE PRIVACY GATE (Unchanged)
         if target_user.get("is_private", False) and target_id != current_user_id:
-            # Check if the person asking is an approved follower
             is_follower = await db.follows.find_one({
                 "follower_id": current_user_id,
                 "following_id": target_id
@@ -260,14 +260,26 @@ class InteractionService:
                     detail="This account is private. Follow them to see their followers."
                 )
 
-        # 1. Get the Follow Edges (Who is following the target?)
-        cursor = db.follows.find({"following_id": target_id})
-        edges = await cursor.to_list(length=100) # Cap at 100 for pagination
-        
-        if not edges:
-            return []
+        # 1. Build the Paginated Query
+        query = {"following_id": target_id}
+        if cursor:
+            # Fetch edges strictly older than the cursor
+            query["_id"] = {"$lt": ObjectId(cursor)}
 
-        # 2. Extract IDs and batch query the users
+        # 2. Get the Follow Edges (Using Limit + 1 trick)
+        db_cursor = db.follows.find(query).sort("_id", -1).limit(limit + 1)
+        edges = await db_cursor.to_list(length=limit + 1)
+        
+        # 3. Determine the next cursor
+        next_cursor = None
+        if len(edges) > limit:
+            extra_edge = edges.pop()
+            next_cursor = str(extra_edge["_id"])
+
+        if not edges:
+            return {"items": [], "next_cursor": None}
+
+        # 4. Extract IDs and batch query the users
         follower_ids = [ObjectId(edge["follower_id"]) for edge in edges]
         
         users_cursor = db.users.find(
@@ -276,16 +288,21 @@ class InteractionService:
         )
         users = await users_cursor.to_list(length=len(follower_ids))
 
-        # 3. Format as UserSearchResult
-        return [UserSearchResult(**user) for user in users]
+        # 5. Format and return the paginated payload
+        return {
+            "items": [UserSearchResult(**user) for user in users],
+            "next_cursor": next_cursor
+        }
 
     @staticmethod
     async def get_following(
         target_username: str, 
         current_user_id: str, 
-        db: AsyncIOMotorDatabase
-    ) -> list[UserSearchResult]:
-        """Fetches the list of people a user is following, enforcing privacy rules."""
+        db: AsyncIOMotorDatabase,
+        cursor: str | None = None,
+        limit: int = 20
+    ) -> dict:
+        """Fetches the list of people a user is following, using cursor pagination."""
         
         target_user = await db.users.find_one({"username": target_username})
         if not target_user:
@@ -293,7 +310,7 @@ class InteractionService:
             
         target_id = str(target_user["_id"])
 
-        # 🛑 THE PRIVACY GATE
+        # THE PRIVACY GATE (Unchanged)
         if target_user.get("is_private", False) and target_id != current_user_id:
             is_follower = await db.follows.find_one({
                 "follower_id": current_user_id,
@@ -305,14 +322,25 @@ class InteractionService:
                     detail="This account is private. Follow them to see who they follow."
                 )
 
-        # 1. Get the Follow Edges (Who is the target following?)
-        cursor = db.follows.find({"follower_id": target_id})
-        edges = await cursor.to_list(length=100)
+        # 1. Build the Paginated Query
+        query = {"follower_id": target_id}
+        if cursor:
+            query["_id"] = {"$lt": ObjectId(cursor)}
+
+        # 2. Get the Follow Edges (Using Limit + 1 trick)
+        db_cursor = db.follows.find(query).sort("_id", -1).limit(limit + 1)
+        edges = await db_cursor.to_list(length=limit + 1)
+        
+        # 3. Determine the next cursor
+        next_cursor = None
+        if len(edges) > limit:
+            extra_edge = edges.pop()
+            next_cursor = str(extra_edge["_id"])
         
         if not edges:
-            return []
+            return {"items": [], "next_cursor": None}
 
-        # 2. Extract IDs and batch query the users
+        # 4. Extract IDs and batch query the users
         following_ids = [ObjectId(edge["following_id"]) for edge in edges]
         
         users_cursor = db.users.find(
@@ -321,8 +349,13 @@ class InteractionService:
         )
         users = await users_cursor.to_list(length=len(following_ids))
 
-        return [UserSearchResult(**user) for user in users]
-
+        # 5. Format and return the paginated payload
+        return {
+            "items": [UserSearchResult(**user) for user in users],
+            "next_cursor": next_cursor
+        }
+    
+    
     # ... block/unblock system ...
 
     @staticmethod

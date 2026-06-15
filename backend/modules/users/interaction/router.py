@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, Query
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from db.mongo import get_database
 from dependencies.auth import get_current_user
-from .schemas import FollowActionResponse, PendingRequestItem
+from .schemas import FollowActionResponse, PendingRequestItem, PaginatedUserResult
 from .service import InteractionService
 from modules.users.profile.schemas import UserSearchResult
 
@@ -77,30 +77,38 @@ async def get_my_follow_requests(
 
 
 
-@router.get("/{username}/followers", response_model=list[UserSearchResult], status_code=status.HTTP_200_OK)
+@router.get("/{username}/followers", response_model=PaginatedUserResult, status_code=status.HTTP_200_OK)
 async def get_user_followers_list(
     username: str,
+    cursor: str | None = Query(None, description="Pagination cursor (ObjectId string)"),
+    limit: int = Query(20, ge=1, le=50, description="Items per page"),
     current_user: dict = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_database)
 ):
-    """Get a list of users following the target account."""
+    """Get a paginated list of users following the target account."""
     return await InteractionService.get_followers(
         target_username=username,
         current_user_id=str(current_user["_id"]),
-        db=db
+        db=db,
+        cursor=cursor,
+        limit=limit
     )
 
-@router.get("/{username}/following", response_model=list[UserSearchResult], status_code=status.HTTP_200_OK)
+@router.get("/{username}/following", response_model=PaginatedUserResult, status_code=status.HTTP_200_OK)
 async def get_user_following_list(
     username: str,
+    cursor: str | None = Query(None, description="Pagination cursor (ObjectId string)"),
+    limit: int = Query(20, ge=1, le=50, description="Items per page"),
     current_user: dict = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_database)
 ):
-    """Get a list of users the target account is following."""
+    """Get a paginated list of users the target account is following."""
     return await InteractionService.get_following(
         target_username=username,
         current_user_id=str(current_user["_id"]),
-        db=db
+        db=db,
+        cursor=cursor,
+        limit=limit
     )
 
 
