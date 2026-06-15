@@ -1,8 +1,9 @@
 from datetime import datetime
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
-from fastapi import HTTPException
+from fastapi import HTTPException, status, json
 from .feed_engine import RecommendationEngine
+from db.redis import redis_client
 
 class FeedService:
     @staticmethod
@@ -106,6 +107,7 @@ class FeedService:
             {"$inc": increments}
         )
 
+    
     @staticmethod
     async def get_algorithmic_feed(
         current_user_id: ObjectId, 
@@ -113,18 +115,25 @@ class FeedService:
         limit: int = 15
     ) -> list[dict]:
         """
-        The 'For You' Page. 
-        Fetches global candidates, applies the math engine, and returns the customized result.
+        The 'For You' Page with Redis Caching.
         """
-        # 1. Fetch the user's specific affinity profile
+        # 1. Define the unique cache key for this specific user
+        cache_key = f"feed:foryou:{str(current_user_id)}"
+
+        # 2. Check Redis FIRST (The Cache Hit)
+        cached_feed = await redis_client.get(cache_key)
+        if cached_feed:
+            # We found it in RAM! Convert the string back to a Python list and return instantly.
+            return json.loads(cached_feed)
+
+        # 3. Cache Miss: We must calculate it from MongoDB
         user = await db.users.find_one({"_id": current_user_id})
         user_affinities = user.get("affinities", {})
 
-        # 2. Candidate Generation: Fetch 100 recent posts from ANYONE on the platform
         pipeline = [
             {"$match": {"is_deleted": False}},
             {"$sort": {"created_at": -1}}, 
-            {"$limit": 100}, # Pool size for the algorithm to rank
+            {"$limit": 100}, 
             {
                 "$lookup": {
                     "from": "users",
@@ -139,25 +148,36 @@ class FeedService:
         cursor = db.posts.aggregate(pipeline)
         candidate_posts = await cursor.to_list(length=100)
 
-        # 3. Apply the Math
         ranked_posts = RecommendationEngine.rank_candidates(candidate_posts, user_affinities)
 
-        # 4. Format and slice the top results for the frontend
         formatted_posts = []
-        # Take only the top 'limit' (e.g., 15) posts after sorting
         for post in ranked_posts[:limit]:
-            post["author"] = {
-                "_id": post["author_data"]["_id"],
-                "username": post["author_data"]["username"],
-                "profile_picture": post["author_data"].get("profile_picture")
+            # Convert Datetimes to ISO strings for JSON compatibility
+            created_at_str = post["created_at"].isoformat() if isinstance(post["created_at"], datetime) else post["created_at"]
+            
+            # We must convert ObjectIds to strings so json.dumps doesn't crash
+            formatted_post = {
+                "_id": str(post["_id"]),
+                "content": post.get("content"),
+                "media": post.get("media", []),
+                "hashtags": post.get("hashtags", []),
+                "like_count": post.get("like_count", 0),
+                "comment_count": post.get("comment_count", 0),
+                "created_at": created_at_str,
+                "author": {
+                    "_id": str(post["author_data"]["_id"]),
+                    "username": post["author_data"]["username"],
+                    "profile_picture": post["author_data"].get("profile_picture")
+                }
             }
             
-            like_exists = await db.likes.find_one({
-                "post_id": post["_id"], 
-                "user_id": current_user_id
-            })
-            post["has_liked"] = bool(like_exists)
+            like_exists = await db.likes.find_one({"post_id": post["_id"], "user_id": current_user_id})
+            formatted_post["has_liked"] = bool(like_exists)
             
-            formatted_posts.append(post)
+            formatted_posts.append(formatted_post)
+
+        # 4. Save the calculated result to Redis for the NEXT time they refresh
+        # ex=300 means this cache expires (Time-To-Live) in 300 seconds (5 minutes)
+        await redis_client.set(cache_key, json.dumps(formatted_posts), ex=300)
 
         return formatted_posts

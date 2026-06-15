@@ -1,6 +1,7 @@
 import boto3
 from botocore.exceptions import ClientError
 from fastapi import HTTPException, status
+from urllib.parse import urlparse
 from config import settings
 
 class S3Service:
@@ -24,18 +25,15 @@ class S3Service:
         s3_client = S3Service.get_s3_client()
         
         try:
-            # generate_presigned_post does NOT make a network request!
-            # It uses cryptographic math to sign the URL locally.
             response = s3_client.generate_presigned_post(
                 Bucket=settings.S3_BUCKET_NAME,
                 Key=object_name,
                 Fields={"Content-Type": file_type},
                 Conditions=[
                     {"Content-Type": file_type},
-                    # Security: Forbid files larger than 5MB (5242880 bytes)
                     ["content-length-range", 1048, 5242880] 
                 ],
-                ExpiresIn=300 # URL expires in 5 minutes
+                ExpiresIn=300
             )
             return response
             
@@ -44,3 +42,36 @@ class S3Service:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Could not generate upload URL"
             )
+
+    @staticmethod
+    def delete_s3_objects(media_urls: list[str]):
+        """
+        Parses full CDN/S3 URLs back into S3 Object Keys and deletes them safely.
+        """
+        if not media_urls:
+            return
+
+        s3_client = S3Service.get_s3_client()
+        objects_to_delete = []
+
+        for url in media_urls:
+            parsed = urlparse(url)
+            path_parts = parsed.path.lstrip("/").split("/")
+            
+            # Match strictly against your configured bucket name
+            if path_parts[0] == settings.S3_BUCKET_NAME:
+                object_key = "/".join(path_parts[1:])
+                objects_to_delete.append({"Key": object_key})
+
+        if objects_to_delete:
+            try:
+                s3_client.delete_objects(
+                    Bucket=settings.S3_BUCKET_NAME,
+                    Delete={"Objects": objects_to_delete, "Quiet": True}
+                )
+            except ClientError as e:
+                # Raise an exception so the calling database cleanup worker knows to abort
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"S3 asset deletion failed: {str(e)}"
+                )

@@ -11,6 +11,7 @@ from modules.users.interaction.router import router as interaction_router
 from modules.posts.router import router as posts_router
 from modules.feed.router import router as feed_router
 from dependencies.exceptions import validation_exception_handler
+from db.redis import check_redis_connection
 
 # The lifespan context manager handles startup and shutdown events
 @asynccontextmanager
@@ -41,3 +42,8 @@ app.include_router(feed_router)
 @app.get("/")
 async def health_check():
     return {"status": f"{settings.PROJECT_NAME} backend is alive and well!"}
+
+@app.on_event("startup")
+async def startup_event():
+    # Your existing startup code (like DB connection)
+    await check_redis_connection()

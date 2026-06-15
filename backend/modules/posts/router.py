@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status, Response
+from fastapi import APIRouter, Depends, status, Response, BackgroundTasks, Query
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
 
@@ -6,6 +6,7 @@ from db.mongo import get_database
 from dependencies.auth import get_current_user
 from .schemas import PostCreate, PostUpdate, PostResponse
 from .service import PostService
+from .cleanup import PostCleanupService
 
 router = APIRouter(prefix="/posts", tags=["Posts Core"])
 
@@ -86,3 +87,21 @@ async def delete_post(
         db=db
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+@router.post("/admin/cleanup", status_code=status.HTTP_202_ACCEPTED)
+async def trigger_orphan_cleanup(
+    background_tasks: BackgroundTasks,
+    # In production, require an Admin role here!
+    # current_user: dict = Depends(get_current_admin_user), 
+    db: AsyncIOMotorDatabase = Depends(get_database)
+):
+    """
+    Manually trigger the background worker to permanently delete 
+    S3 files and MongoDB documents for posts soft-deleted > 30 days ago.
+    """
+    # For testing right now, let's set days_to_keep=0 so it deletes EVERYTHING 
+    # currently sitting in the soft-delete trash bin. 
+    # Change back to 30 for production.
+    background_tasks.add_task(PostCleanupService.purge_expired_deleted_posts, db, days_to_keep=0)
+    
+    return {"message": "Cleanup task dispatched to background worker."}

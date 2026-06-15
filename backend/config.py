@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, SettingsConfigDict, os 
 
 class Settings(BaseSettings):
     PROJECT_NAME: str
@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     S3_SECRET_ACCESS_KEY: str
     S3_REGION: str
     S3_ENDPOINT_URL: str
+
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379")
 
     # This tells Pydantic to look for the .env file in the same directory
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
